@@ -25,15 +25,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Reconstruct Gmail token
-        run: |
-          echo "${{ secrets.GMAIL_TOKEN }}" > token.json
-
-      - name: Reconstruct Google Calendar service account credentials
-        run: |
-          echo "${{ secrets.GOOGLE_CALENDAR_CREDENTIALS }}" > service_account.json
-
       - name: Run event fetcher
         env:
+          GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
+          GOOGLE_CALENDAR_CREDENTIALS: ${{ secrets.GOOGLE_CALENDAR_CREDENTIALS }}
           GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
         run: python src/main.py

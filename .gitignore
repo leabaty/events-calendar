@@ -1,0 +1,10 @@
+# Credentials — never commit these!
+token.json
+client_secret*.json
+service_account*.json
+events-gap-*.json
+
+# Python
+venv/
+__pycache__/
+*.pyc

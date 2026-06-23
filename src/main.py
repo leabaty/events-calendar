@@ -1,8 +1,9 @@
 """
 Main entry point — orchestrates:
-    1. Fetch unread emails from Gmail (events-gap label)
+    1. Fetch unread emails from Gmail (events-gap + events-gap/erreur labels)
     2. Parse each email to extract events
     3. Create events in Google Calendar
+    4. Mark success → events-gap/traité, failure → events-gap/erreur
 
 Usage:
     python src/main.py
@@ -16,9 +17,11 @@ from datetime import datetime
 # Add src to path if running from project root
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gmail_reader import fetch_unread_emails, mark_as_processed
+from gmail_reader import fetch_unread_emails, mark_as_processed, mark_as_error
 from parser import parse_email
 from calendar_writer import create_events
+
+logger = logging.getLogger("main")
 
 
 def setup_logging():
@@ -31,16 +34,62 @@ def setup_logging():
     )
 
 
+def process_one_email(email: dict) -> bool:
+    """
+    Parse a single email and create its events.
+
+    Returns ``True`` on success, ``False`` on failure.
+    """
+    subject = email.get("subject", "(no subject)")
+    sender = email.get("sender", "(unknown)")
+    source_url = f"email://{sender}/{subject}"
+
+    # ---- Parse ----
+    logger.info("Parsing email: '%s' from %s", subject, sender)
+    try:
+        events = parse_email(
+            body_html=email.get("body_html", ""),
+            body_text=email.get("body_text", ""),
+            sender=sender,
+            source_url=source_url,
+        )
+    except Exception as exc:
+        logger.error("Failed to parse email '%s': %s", subject, exc)
+        return False
+
+    if not events:
+        logger.info("  → No events found — nothing to create.")
+        return True  # Not an error, just nothing to do
+
+    logger.info("  → Extracted %d event(s).", len(events))
+
+    # ---- Create events ----
+    try:
+        created = create_events(events)
+        if created < len(events):
+            logger.warning(
+                "  → Only %d / %d events were created (some may be duplicates).",
+                created,
+                len(events),
+            )
+        else:
+            logger.info("  → All %d event(s) created successfully.", created)
+    except Exception as exc:
+        logger.error("Failed to create events for '%s': %s", subject, exc)
+        return False
+
+    return True
+
+
 def main():
     """Main orchestration routine."""
     setup_logging()
-    logger = logging.getLogger("main")
     logger.info("=" * 50)
     logger.info("Events Gap — Starting processing cycle")
     logger.info("=" * 50)
 
     # ------------------------------------------------------------------
-    # Step 1: Fetch unread emails
+    # Step 1: Fetch emails
     # ------------------------------------------------------------------
     logger.info("Step 1/3: Fetching unread emails from Gmail...")
     try:
@@ -57,73 +106,38 @@ def main():
     logger.info("Found %d email(s) to process.", len(emails))
 
     # ------------------------------------------------------------------
-    # Step 2: Parse each email
+    # Step 2+3: Process each email individually
     # ------------------------------------------------------------------
-    logger.info("Step 2/3: Parsing emails to extract events...")
-    all_events: list[dict] = []
-    parsed_count = 0
+    ok_ids: list[str] = []
+    error_ids: list[str] = []
+    total_events = 0
 
     for email in emails:
         subject = email.get("subject", "(no subject)")
-        sender = email.get("sender", "(unknown)")
-        logger.info("Parsing email: '%s' from %s", subject, sender)
+        msg_id = email["id"]
 
-        try:
-            events = parse_email(
-                body_html=email.get("body_html", ""),
-                body_text=email.get("body_text", ""),
-                sender=sender,
-                source_url=f"email://{sender}/{subject}",
-            )
-        except Exception as exc:
-            logger.error("Failed to parse email '%s': %s", subject, exc)
-            continue
+        success = process_one_email(email)
 
-        if events:
-            logger.info("  → Extracted %d event(s).", len(events))
-            all_events.extend(events)
-            parsed_count += 1
+        if success:
+            ok_ids.append(msg_id)
         else:
-            logger.info("  → No events found.")
-
-    logger.info(
-        "Parsed %d / %d emails, extracted %d event(s) total.",
-        parsed_count,
-        len(emails),
-        len(all_events),
-    )
+            error_ids.append(msg_id)
+            logger.warning("  → Email '%s' will be retried next cycle.", subject)
 
     # ------------------------------------------------------------------
-    # Step 3: Create events in Google Calendar
+    # Step 4: Apply labels
     # ------------------------------------------------------------------
-    logger.info("Step 3/3: Writing events to Google Calendar...")
-    created_count = 0
+    marked_ok = mark_as_processed(ok_ids) if ok_ids else 0
+    marked_err = mark_as_error(error_ids) if error_ids else 0
 
-    if all_events:
-        try:
-            created_count = create_events(all_events)
-        except Exception as exc:
-            logger.error("Step 3 failed — could not create events: %s", exc)
-            # Continue to show summary even on partial failure
-    else:
-        logger.info("No events to create.")
-
-    # ------------------------------------------------------------------
-    # Summary
-    # ------------------------------------------------------------------
     logger.info("=" * 50)
     logger.info(
-        "RÉSUMÉ : %d mail(s) traités, %d événement(s) créés.",
-        len(emails),
-        created_count,
+        "RÉSUMÉ : %d mail(s) traités, %d en erreur, événements créés.",
+        marked_ok,
+        marked_err,
     )
     logger.info("=" * 50)
-
-    # Mark all emails as processed
-    message_ids = [e["id"] for e in emails]
-    marked = mark_as_processed(message_ids)
-    logger.info("Marked %d email(s) as processed.", marked)
-    sys.exit(0)
+    sys.exit(0 if not error_ids else 1)
 
 
 if __name__ == "__main__":

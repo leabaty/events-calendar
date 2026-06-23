@@ -51,13 +51,17 @@ def _event_exists(service, calendar_id: str, title: str,
     in the calendar (case-insensitive title comparison).
     """
     try:
-        # Search for events on the same day ±1 day to be safe
+        # Build RFC3339 timestamps with timezone
+        date_prefix = date_start[:10]  # "2026-06-24"
+        time_min = f"{date_prefix}T00:00:00+02:00"
+        time_max = f"{date_prefix}T23:59:59+02:00"
+
         events_result = (
             service.events()
             .list(
                 calendarId=calendar_id,
-                timeMin=date_start,
-                timeMax=date_start.replace("T", "T23:59:59"),
+                timeMin=time_min,
+                timeMax=time_max,
                 maxResults=50,
                 singleEvents=True,
                 orderBy="startTime",
@@ -107,6 +111,7 @@ def create_events(events: list[dict]) -> int:
         location = event.get("location", "")
         description = event.get("description", "")
         source_url = event.get("source_url", "")
+        color_id = event.get("color_id")
 
         if not title or not date_start:
             logger.warning("Skipping event with missing title or date_start.")
@@ -130,6 +135,9 @@ def create_events(events: list[dict]) -> int:
 
         if location:
             event_body["location"] = location
+
+        if color_id is not None:
+            event_body["colorId"] = str(color_id)
 
         # Format dates (ISO string → RFC3339)
         try:

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 LABEL_INBOX = "events-gap"
 LABEL_PROCESSED = "events-gap/traité"
+LABEL_ERROR = "events-gap/erreur"
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
 
@@ -122,43 +123,45 @@ def _get_header(headers, name: str) -> str:
 
 def fetch_unread_emails() -> list[dict]:
     """
-    Fetch all unprocessed emails from the 'events-gap' label.
+    Fetch emails from ``events-gap`` **and** ``events-gap/erreur`` labels.
+
+    Emails in ``erreur`` are retried every cycle until they succeed.
 
     Returns a list of dicts:
-        {subject, sender, body_html, body_text, date}
+        {id, subject, sender, body_html, body_text, date}
     """
     service = _get_gmail_service()
-    label_id = _get_or_create_label(service, LABEL_INBOX)
 
-    if not label_id:
-        logger.warning("Label '%s' not found, nothing to process.", LABEL_INBOX)
-        return []
+    # Collect message IDs from both labels
+    message_ids: set[str] = set()
+    for label_name in (LABEL_INBOX, LABEL_ERROR):
+        label_id = _get_or_create_label(service, label_name)
+        if not label_id:
+            continue
+        try:
+            query = f"label:{label_name}"
+            results = (
+                service.users()
+                .messages()
+                .list(userId="me", q=query, labelIds=[label_id])
+                .execute()
+            )
+            for msg in results.get("messages", []):
+                message_ids.add(msg["id"])
+        except HttpError as exc:
+            logger.error("Failed to list messages for '%s': %s", label_name, exc)
 
-    try:
-        # List messages with the label
-        query = f"label:{LABEL_INBOX}"
-        results = (
-            service.users()
-            .messages()
-            .list(userId="me", q=query, labelIds=[label_id])
-            .execute()
-        )
-        messages = results.get("messages", [])
-    except HttpError as exc:
-        logger.error("Failed to list messages: %s", exc)
-        return []
-
-    if not messages:
-        logger.info("No unprocessed emails found under label '%s'.", LABEL_INBOX)
+    if not message_ids:
+        logger.info("No emails to process under '%s' or '%s'.", LABEL_INBOX, LABEL_ERROR)
         return []
 
     emails = []
-    for msg_meta in messages:
+    for msg_id in message_ids:
         try:
             msg = (
                 service.users()
                 .messages()
-                .get(userId="me", id=msg_meta["id"], format="full")
+                .get(userId="me", id=msg_id, format="full")
                 .execute()
             )
         except HttpError as exc:
@@ -196,7 +199,7 @@ def fetch_unread_emails() -> list[dict]:
                         body_text = decoded
 
         email = {
-            "id": msg_meta["id"],
+            "id": msg_id,
             "subject": subject,
             "sender": sender,
             "body_html": body_html,
@@ -244,4 +247,39 @@ def mark_as_processed(message_ids: list[str]) -> int:
             logger.error("Failed to modify message %s: %s", msg_id, exc)
 
     logger.info("Marked %d / %d messages as processed.", count, len(message_ids))
+    return count
+
+
+def mark_as_error(message_ids: list[str]) -> int:
+    """
+    Apply the ``events-gap/erreur`` label (keeping the inbox label so it gets
+    retried next cycle).
+
+    Returns the number of successfully labelled messages.
+    """
+    if not message_ids:
+        return 0
+
+    service = _get_gmail_service()
+    error_label_id = _get_or_create_label(service, LABEL_ERROR)
+    if not error_label_id:
+        logger.error("Cannot mark messages as error — label missing.")
+        return 0
+
+    count = 0
+    for msg_id in message_ids:
+        try:
+            service.users().messages().modify(
+                userId="me",
+                id=msg_id,
+                body={
+                    "addLabelIds": [error_label_id],
+                    # Keep the inbox label so it's picked up next time
+                },
+            ).execute()
+            count += 1
+        except HttpError as exc:
+            logger.error("Failed to mark message %s as error: %s", msg_id, exc)
+
+    logger.info("Marked %d / %d messages as error.", count, len(message_ids))
     return count

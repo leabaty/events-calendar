@@ -25,9 +25,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Save original token fingerprint
+        id: token-fingerprint
+        env:
+          GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
+        run: |
+          echo "$GMAIL_TOKEN" > token.orig.json
+          echo "hash=$(sha256sum token.orig.json | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
       - name: Run event fetcher
         env:
           GMAIL_TOKEN: ${{ secrets.GMAIL_TOKEN }}
           GOOGLE_CALENDAR_CREDENTIALS: ${{ secrets.GOOGLE_CALENDAR_CREDENTIALS }}
           GOOGLE_CALENDAR_ID: ${{ secrets.GOOGLE_CALENDAR_ID }}
         run: python src/main.py
+
+      - name: Update GMAIL_TOKEN secret if refreshed
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        shell: bash
+        run: |
+          new_hash=$(sha256sum token.json | cut -d' ' -f1)
+          if [ "$new_hash" != "${{ steps.token-fingerprint.outputs.hash }}" ]; then
+            echo "🔄 Token was refreshed — updating GMAIL_TOKEN secret..."
+            gh secret set GMAIL_TOKEN -R "${{ github.repository }}" < token.json
+            echo "✅ Secret updated successfully."
+          else
+            echo "✓ Token unchanged — no update needed."
+          fi

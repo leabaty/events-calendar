@@ -37,7 +37,9 @@ def _discover_parsers():
 
     SENDER_MAP.extend([
         ("walpine.fr", walpine),
+        # basp05.com (Apex Brewpub) — emails may come from a gmail address
         ("basp05.com", basp05),
+        ("apex05.concert@gmail.com", basp05),
         ("cimalpes.fr", cimalpes),
     ])
 

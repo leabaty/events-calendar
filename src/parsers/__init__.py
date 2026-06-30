@@ -41,6 +41,40 @@ FRENCH_DAYS = {
 }
 
 
+def format_title(title: str) -> str:
+    """
+    Format a French event title in proper case (``Abc``).
+
+    - Lowercases everything, then capitalises the first letter
+    - Preserves existing capital letters that follow an apostrophe
+      (e.g. ``l'Apex``, ``d'Olive``).
+
+    Examples::
+
+        "HAPPY HOUR"                 → "Happy hour"
+        "JAM D'OLIVE"                → "Jam d'Olive"
+        "ANNIVERSAIRE DE L'APEX"     → "Anniversaire de l'Apex"
+        "TIBET, HOMMAGE AU PEUPLE…"  → "Tibet, hommage au peuple…"
+        "K2"                         → "K2"
+    """
+    if not title:
+        return title
+
+    # Lowercase everything first
+    lower = title.lower()
+
+    # Restore capital letter after an apostrophe (l'X → l'X)
+    lower = re.sub(
+        r"([dlDLnNsS])'(\w)",
+        lambda m: m.group(1) + "'" + m.group(2).upper(),
+        lower,
+    )
+
+    # Capitalise the very first character
+    result = lower[0].upper() + lower[1:]
+    return result
+
+
 def resolve_french_date(day: int | None, month: int, year: int | None,
                         day_name: str | None = None) -> datetime | None:
     """

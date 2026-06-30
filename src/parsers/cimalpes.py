@@ -129,7 +129,7 @@ def parse(soup: BeautifulSoup, source_url: str) -> list[dict]:
                     ),
                     "description": "",
                     "source_url": source_url,
-                    "color_id": 11,  # bleu foncé
+                    "color_id": 10,  # vert
                 }
             elif current_event is not None:
                 # Line starts with a day name but doesn't match the full

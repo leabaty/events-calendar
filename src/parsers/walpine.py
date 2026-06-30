@@ -60,6 +60,7 @@ def parse(soup: BeautifulSoup, source_url: str) -> list[dict]:
                 "location": location,
                 "description": card_text[:500],
                 "source_url": source_url,
+                "color_id": 9,  # bleu
             })
 
     # Fallback: whole-body parsing
@@ -79,6 +80,7 @@ def parse(soup: BeautifulSoup, source_url: str) -> list[dict]:
                 "location": "",
                 "description": "",
                 "source_url": source_url,
+                "color_id": 9,  # bleu
             })
 
     return events

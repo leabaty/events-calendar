@@ -24,8 +24,8 @@ from . import FRENCH_MONTHS, FRENCH_DAYS, format_title
 
 logger = logging.getLogger(__name__)
 
-# 🎥⛰️  emoji to prepend to every event title
-EMOJI = "🎥⛰️ "
+# 🎥  emoji to prepend to every event title
+EMOJI = "🎥 "
 
 # Regex for event header lines, e.g.:
 #   "Mercredi 1er juillet - 18H00"
@@ -129,7 +129,7 @@ def parse(soup: BeautifulSoup, source_url: str) -> list[dict]:
                     ),
                     "description": "",
                     "source_url": source_url,
-                    "color_id": 10,  # vert
+                    "color_id": 9,  # bleu
                 }
             elif current_event is not None:
                 # Line starts with a day name but doesn't match the full

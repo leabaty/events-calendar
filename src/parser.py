@@ -4,8 +4,9 @@ Parser — dispatcher that routes each email to the right domain-specific parser
 Each parser lives in its own file under ``parsers/``:
 
 - ``parsers/cimalpes.py``  — cimalpes.fr  (Cinémathèque de montagne)
-- ``parsers/walpine.py``   — walpine.fr
-- ``parsers/basp05.py``    — basp05.com
+- ``parsers/walpine.py``    — walpine.fr
+- ``parsers/basp05.py``     — basp05.com
+- ``parsers/serreponcon.py`` — contact@serreponcon.com
 
 Adding a new sender?  Just create ``parsers/my_sender.py`` with a
 ``parse(soup, source_url)`` function and register it in the
@@ -33,13 +34,14 @@ def _discover_parsers():
     if SENDER_MAP:
         return  # already populated
 
-    from parsers import cimalpes, walpine, basp05
+    from parsers import cimalpes, walpine, basp05, serreponcon
 
     SENDER_MAP.extend([
         ("walpine.fr", walpine),
         # basp05.com (Apex Brewpub) — emails may come from a gmail address
         ("basp05.com", basp05),
         ("apex05.concert@gmail.com", basp05),
+        ("contact@serreponcon.com", serreponcon),
         ("cimalpes.fr", cimalpes),
     ])
 
